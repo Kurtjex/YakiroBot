@@ -1,108 +1,107 @@
-module.exports = {
-    config: {
-        name: "acp",
-        author: "Kurt | DEKU",
-        role: 2,
-        description: "accept friend request on bot",
-        usage: "[uid]",
-    },
-    onRun: async ({ api, event, text }) => {
-        const moment = require("moment-timezone");
+module.exports.config = {
+  name: "acp",
+  role: 1,
+  description: "Accept/Decline Incoming Bot Friend Requests",
+  usage: "uid",
+  author: "convert | ewan kung sino",
+};
 
-        const handleApprove = async (targetUID) => {
-            const form = {
-                av: api.getCurrentUserID(),
-                fb_api_req_friendly_name: "FriendingCometFriendRequestConfirmMutation",
-                doc_id: "3147613905362928",
-                variables: JSON.stringify({
-                    input: {
-                        source: "friends_tab",
-                        actor_id: api.getCurrentUserID(),
-                        friend_requester_id: targetUID,
-                        client_mutation_id: Math.round(Math.random() * 19).toString(),
-                    },
-                    scale: 3,
-                    refresh_num: 0,
-                }),
-            };
-            const success = [];
-            const failed = [];
-            try {
-                const friendRequest = await api.httpPost(
-                    "https://www.facebook.com/api/graphql/",
-                    form
-                );
-                const response = JSON.parse(friendRequest);
-                if (response.errors) {
-                    failed.push(targetUID);
-                } else {
-                    success.push(targetUID);
-                }
-            } catch (e) {
-                failed.push(targetUID);
-            }
-            return { success, failed };
-        };
+module.exports.handleReply = async ({ handleReply, event, api }) => {
+  const { author, listRequest } = handleReply;
+  if (author != event.senderID) return;
+  const args = event.body.replace(/ +/g, " ").toLowerCase().split(" ");
 
-        if (text[0] === "approve") {
-            if (text.length !== 2 || isNaN(text[1])) {
-                return api.sendMessage(
-                    `Invalid syntax. Use: acc approve <UID>`,
-                    event.threadID,
-                    event.messageID
-                );
-            }
-            const targetUID = text[1];
-            const { success, failed } = await handleApprove(targetUID);
-            if (success.length > 0) {
-                api.sendMessage(
-                    `Approved friend request for UID ${success.join(", ")}`,
-                    event.threadID,
-                    event.messageID
-                );
-            }
-            if (failed.length > 0) {
-                api.sendMessage(
-                    `Failed to approve friend request for UID ${failed.join(", ")}`,
-                    event.threadID,
-                    event.messageID
-                );
-            }
-            return;
-        }
+  const form = {
+    av: api.getCurrentUserID(),
+    fb_api_caller_class: "RelayModern",
+    variables: {
+      input: {
+        source: "friends_tab",
+        actor_id: api.getCurrentUserID(),
+        client_mutation_id: Math.round(Math.random() * 19).toString()
+      },
+      scale: 3,
+      refresh_num: 0
+    }
+  };
 
-        const form = {
-            av: api.getCurrentUserID(),
-            fb_api_req_friendly_name: "FriendingCometFriendRequestsRootQueryRelayPreloader",
-            fb_api_caller_class: "RelayModern",
-            doc_id: "4499164963466303",
-            variables: JSON.stringify({ input: { scale: 3 } }),
-        };
+  const success = [];
+  const failed = [];
 
-        try {
-            const listRequest = JSON.parse(
-                await api.httpPost("https://www.facebook.com/api/graphql/", form)
-            ).data.viewer.friending_possibilities.edges;
-            let msg = "";
-            let i = 0;
-            for (const user of listRequest) {
-                i++;
-                msg +=
-                    `\n${i}. Name: ${user.node.name}` +
-                    `\nID: ${user.node.id}` +
-                    `\nUrl: ${user.node.url.replace("www.facebook", "fb")}` +
-                    `\nTime: ${moment(user.time * 1009)
-                        .tz("Asia/Manila")
-                        .format("DD/MM/YYYY HH:mm:ss")}\n`;
-            }
-            api.sendMessage(
-                `${msg}\nApprove friend request using UID: acc approve <UID>`,
-                event.threadID,
-                event.messageID
-            );
-        } catch (error) {
-            console.error("Error fetching friend requests:", error);
-            api.sendMessage(`Failed to fetch friend requests. Please try again later. ${error.message}`, event.threadID, event.messageID);
-        }
-    },
+  if (args[0] == "add") {
+    form.fb_api_req_friendly_name = "FriendingCometFriendRequestConfirmMutation";
+    form.doc_id = "3147613905362928";
+  }
+  else if (args[0] == "del") {
+    form.fb_api_req_friendly_name = "FriendingCometFriendRequestDeleteMutation";
+    form.doc_id = "4108254489275063";
+  }
+  else return api.sendMessage("Please select <add | del > <so thu tu | or \"all\">", event.threadID, event.messageID);
+  let targetIDs = args.slice(1);
+
+  if (args[1] == "all") {
+    targetIDs = [];
+    const lengthList = listRequest.length;
+    for (let i = 1; i <= lengthList; i++) targetIDs.push(i);
+  }
+
+  const newTargetIDs = [];
+  const promiseFriends = [];
+
+  for (const stt of targetIDs) {
+    const u = listRequest[parseInt(stt) - 1];
+    if (!u) {
+      failed.push(`Can't find stt ${stt} in the list`);
+      continue;
+    }
+    form.variables.input.friend_requester_id = u.node.id;
+    form.variables = JSON.stringify(form.variables);
+    newTargetIDs.push(u);
+    promiseFriends.push(api.httpPost("https://www.facebook.com/api/graphql/", form));
+    form.variables = JSON.parse(form.variables);
+  }
+
+  const lengthTarget = newTargetIDs.length;
+  for (let i = 0; i < lengthTarget; i++) {
+    try {
+      const friendRequest = await promiseFriends[i];
+      if (JSON.parse(friendRequest).errors) failed.push(newTargetIDs[i].node.name);
+      else success.push(newTargetIDs[i].node.name);
+    }
+    catch(e) {
+      failed.push(newTargetIDs[i].node.name);
+    }
+  }
+
+  api.sendMessage(`» The ${args[0] == 'add' ? 'chapter' : 'scratching'} requires all of you ${success.length} people:\n${success.join("\n")}${failed.length > 0 ? `\n» That's wrong ${failed.length} people: ${failed.join("\n")}` : ""}`, event.threadID, event.messageID);
+};
+
+
+module.exports.onRun = async ({ event, api }) => {
+  const moment = require("moment-timezone");
+  const form = {
+    av: api.getCurrentUserID(),
+    fb_api_req_friendly_name: "FriendingCometFriendRequestsRootQueryRelayPreloader",
+    fb_api_caller_class: "RelayModern",
+    doc_id: "4499164963466303",
+    variables: JSON.stringify({input: {scale: 3}})
+  };
+  const listRequest = JSON.parse(await api.httpPost("https://www.facebook.com/api/graphql/", form)).data.viewer.friending_possibilities.edges;
+  let msg = "";
+  let i = 0;
+  for (const user of listRequest) {
+    i++;
+    msg += (`\n${i}. Name: ${user.node.name}`
+         + `\nID: ${user.node.id}`
+         + `\nUrl: ${user.node.url.replace("www.facebook", "fb")}`
+         + `\nTime: ${moment(user.time*1009).tz("Asia/Manila").format("DD/MM/YYYY HH:mm:ss")}\n`);
+  }
+  api.sendMessage(`${msg}\nReply to this message with content: <add | del> <comparison | or \"all\"> to take action`, event.threadID, (e, info) => {
+      global.client.handleReply.push({
+        name: this. config. name,
+        messageID: info.messageID,
+        listRequest,
+        author: event.senderID
+      });
+    }, event.messageID);
 };

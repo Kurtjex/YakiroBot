@@ -1,9 +1,9 @@
 module.exports.config = {
     name: "sendnoti",
-    role: 2,
-    author: "Yan Maglinte | Kurt",
+    role: 1,
     description: "Sends a message to all groups and can only be done by the admin.",
-    usages: "[Text]"
+  usage: "[Text]",
+  author: "Yan Maglinte | Kurt",
 };//dapat kase ganyan di yung kanina kase magkakaroon yan ng crushed system..
 
 module.exports.onRun = async ({ api, event, args }) => {
